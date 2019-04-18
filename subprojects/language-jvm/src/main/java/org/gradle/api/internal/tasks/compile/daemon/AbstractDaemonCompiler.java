@@ -16,11 +16,18 @@
 package org.gradle.api.internal.tasks.compile.daemon;
 
 import com.google.common.collect.Lists;
+import org.gradle.api.logging.LogLevel;
+import org.gradle.api.logging.Logger;
 import org.gradle.api.tasks.WorkResult;
+import org.gradle.api.tasks.WorkResults;
 import org.gradle.api.tasks.compile.BaseForkOptions;
 import org.gradle.internal.UncheckedException;
+import org.gradle.internal.classloader.FilteringClassLoader;
+import org.gradle.internal.classloader.VisitableURLClassLoader;
+import org.gradle.internal.classpath.DefaultClassPath;
 import org.gradle.language.base.internal.compile.CompileSpec;
 import org.gradle.language.base.internal.compile.Compiler;
+import org.gradle.workers.internal.ClassLoaderStructure;
 import org.gradle.workers.internal.DaemonForkOptions;
 import org.gradle.workers.internal.DefaultWorkResult;
 import org.gradle.workers.internal.SimpleActionExecutionSpec;
@@ -28,6 +35,7 @@ import org.gradle.workers.internal.Worker;
 import org.gradle.workers.internal.WorkerFactory;
 
 import javax.inject.Inject;
+import java.io.File;
 import java.util.Set;
 import java.util.concurrent.Callable;
 
@@ -69,6 +77,42 @@ public abstract class AbstractDaemonCompiler<T extends CompileSpec> implements C
         mergedJvmArgs.addAll(normalized(right.getJvmArgs()));
         merged.setJvmArgs(Lists.newArrayList(mergedJvmArgs));
         return merged;
+    }
+
+    protected static FilteringClassLoader.Spec getMinimalGradleFilter() {
+        // Allow just the basics instead of the entire Gradle API
+        FilteringClassLoader.Spec gradleFilterSpec = new FilteringClassLoader.Spec();
+        // Logging
+        gradleFilterSpec.allowPackage("org.slf4j");
+        gradleFilterSpec.allowClass(Logger.class);
+        gradleFilterSpec.allowClass(LogLevel.class);
+        // Native
+        gradleFilterSpec.allowPackage("org.gradle.internal.nativeintegration");
+        gradleFilterSpec.allowPackage("org.gradle.internal.nativeplatform");
+        gradleFilterSpec.allowPackage("net.rubygrapefruit.platform");
+        // Workers
+        gradleFilterSpec.allowPackage("org.gradle.workers");
+        gradleFilterSpec.allowPackage("javax.inject");
+        // WorkResult
+        gradleFilterSpec.allowClass(WorkResults.class);
+        gradleFilterSpec.allowClass(WorkResult.class);
+
+        return gradleFilterSpec;
+    }
+
+    protected static ClassLoaderStructure getCompilerClassLoaderStructure(Iterable<File> compilerClasspathFiles, Iterable<File> targetVersionClasspathFiles, Iterable<String> versionSpecificPackages) {
+        VisitableURLClassLoader.Spec targetVersionClasspath = new VisitableURLClassLoader.Spec("worker-loader", DefaultClassPath.of(targetVersionClasspathFiles).getAsURLs());
+        VisitableURLClassLoader.Spec compilerClasspath = new VisitableURLClassLoader.Spec("compiler-loader", DefaultClassPath.of(compilerClasspathFiles).getAsURLs());
+
+        FilteringClassLoader.Spec gradleAndUserFilter = getMinimalGradleFilter();
+        for (String sharedPackage : versionSpecificPackages) {
+            gradleAndUserFilter.allowPackage(sharedPackage);
+        }
+
+        return new ClassLoaderStructure(getMinimalGradleFilter())
+                        .withChild(targetVersionClasspath)
+                        .withChild(gradleAndUserFilter)
+                        .withChild(compilerClasspath);
     }
 
     private static class CompilerCallable<T extends CompileSpec> implements Callable<WorkResult> {

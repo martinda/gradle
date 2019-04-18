@@ -32,6 +32,7 @@ package org.gradle.api.internal.tasks.scala;
  * limitations under the License.
  */
 
+import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.api.internal.tasks.compile.BaseForkOptionsConverter;
 import org.gradle.api.internal.tasks.compile.daemon.AbstractDaemonCompiler;
 import org.gradle.api.tasks.compile.ForkOptions;
@@ -39,6 +40,7 @@ import org.gradle.api.tasks.scala.ScalaForkOptions;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.process.JavaForkOptions;
 import org.gradle.process.internal.JavaForkOptionsFactory;
+import org.gradle.workers.internal.ClassLoaderStructure;
 import org.gradle.workers.internal.DaemonForkOptions;
 import org.gradle.workers.internal.DaemonForkOptionsBuilder;
 import org.gradle.workers.internal.KeepAliveMode;
@@ -46,16 +48,19 @@ import org.gradle.workers.internal.WorkerDaemonFactory;
 
 import java.io.File;
 import java.util.Arrays;
+import java.util.Collection;
 
 public class DaemonScalaCompiler<T extends ScalaJavaJointCompileSpec> extends AbstractDaemonCompiler<T> {
-    private static final Iterable<String> SHARED_PACKAGES =
+    private static final Iterable<String> VERSION_SPECIFIC_PACKAGES =
             Arrays.asList("scala", "com.typesafe.zinc", "xsbti", "com.sun.tools.javac", "sbt");
+    private final ClassPathRegistry classPathRegistry;
     private final Iterable<File> zincClasspath;
     private final JavaForkOptionsFactory forkOptionsFactory;
     private final File daemonWorkingDir;
 
-    public DaemonScalaCompiler(File daemonWorkingDir, Compiler<T> delegate, WorkerDaemonFactory workerDaemonFactory, Iterable<File> zincClasspath, JavaForkOptionsFactory forkOptionsFactory) {
+    public DaemonScalaCompiler(File daemonWorkingDir, Compiler<T> delegate, ClassPathRegistry classPathRegistry, WorkerDaemonFactory workerDaemonFactory, Iterable<File> zincClasspath, JavaForkOptionsFactory forkOptionsFactory) {
         super(delegate, workerDaemonFactory);
+        this.classPathRegistry = classPathRegistry;
         this.zincClasspath = zincClasspath;
         this.forkOptionsFactory = forkOptionsFactory;
         this.daemonWorkingDir = daemonWorkingDir;
@@ -64,14 +69,19 @@ public class DaemonScalaCompiler<T extends ScalaJavaJointCompileSpec> extends Ab
     @Override
     protected DaemonForkOptions toDaemonForkOptions(T spec) {
         ForkOptions javaOptions = spec.getCompileOptions().getForkOptions();
+
+        // TODO We should infer a minimal classpath from delegate instead
+        Collection<File> languageScalaFiles = classPathRegistry.getClassPath("LANGUAGE-SCALA").getAsFiles();
+
+        ClassLoaderStructure classLoaderStructure = getCompilerClassLoaderStructure(languageScalaFiles, zincClasspath, VERSION_SPECIFIC_PACKAGES);
+
         ScalaForkOptions scalaOptions = spec.getScalaCompileOptions().getForkOptions();
         JavaForkOptions javaForkOptions = new BaseForkOptionsConverter(forkOptionsFactory).transform(mergeForkOptions(javaOptions, scalaOptions));
         javaForkOptions.setWorkingDir(daemonWorkingDir);
 
         return new DaemonForkOptionsBuilder(forkOptionsFactory)
             .javaForkOptions(javaForkOptions)
-            .classpath(zincClasspath)
-            .sharedPackages(SHARED_PACKAGES)
+            .withClassLoaderStrucuture(classLoaderStructure)
             .keepAliveMode(KeepAliveMode.SESSION)
             .build();
     }

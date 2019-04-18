@@ -17,6 +17,7 @@
 package org.gradle.api.internal.tasks.scala;
 
 import org.gradle.api.file.FileCollection;
+import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.language.base.internal.compile.CompilerFactory;
 import org.gradle.process.internal.JavaForkOptionsFactory;
@@ -26,6 +27,7 @@ import java.io.File;
 import java.util.Set;
 
 public class ScalaCompilerFactory implements CompilerFactory<ScalaJavaJointCompileSpec> {
+    private final ClassPathRegistry classPathRegistry;
     private final WorkerDaemonFactory workerDaemonFactory;
     private FileCollection scalaClasspath;
     private FileCollection zincClasspath;
@@ -34,9 +36,10 @@ public class ScalaCompilerFactory implements CompilerFactory<ScalaJavaJointCompi
     private final JavaForkOptionsFactory forkOptionsFactory;
 
     public ScalaCompilerFactory(
-        File daemonWorkingDir, WorkerDaemonFactory workerDaemonFactory, FileCollection scalaClasspath,
+        File daemonWorkingDir, ClassPathRegistry classPathRegistry, WorkerDaemonFactory workerDaemonFactory, FileCollection scalaClasspath,
         FileCollection zincClasspath, File gradleUserHomeDir, JavaForkOptionsFactory forkOptionsFactory) {
         this.daemonWorkingDir = daemonWorkingDir;
+        this.classPathRegistry = classPathRegistry;
         this.workerDaemonFactory = workerDaemonFactory;
         this.scalaClasspath = scalaClasspath;
         this.zincClasspath = zincClasspath;
@@ -51,7 +54,7 @@ public class ScalaCompilerFactory implements CompilerFactory<ScalaJavaJointCompi
         // currently, we leave it to ZincScalaCompiler to also compile the Java code
         Compiler<ScalaJavaJointCompileSpec> scalaCompiler = new DaemonScalaCompiler<ScalaJavaJointCompileSpec>(
             daemonWorkingDir, new ZincScalaCompiler(scalaClasspathFiles, zincClasspathFiles, gradleUserHomeDir),
-            workerDaemonFactory, zincClasspathFiles, forkOptionsFactory);
+            classPathRegistry, workerDaemonFactory, zincClasspathFiles, forkOptionsFactory);
         return new NormalizingScalaCompiler(scalaCompiler);
     }
 }

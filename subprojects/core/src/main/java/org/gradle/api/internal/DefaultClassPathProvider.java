@@ -35,6 +35,9 @@ public class DefaultClassPathProvider implements ClassPathProvider {
         if (name.equals("LANGUAGE-GROOVY")) {
             return moduleRegistry.getModule("gradle-language-groovy").getAllRequiredModulesClasspath();
         }
+        if (name.equals("LANGUAGE-SCALA")) {
+            return moduleRegistry.getModule("gradle-scala").getAllRequiredModulesClasspath();
+        }
         if (name.equals("ANT")) {
             ClassPath classpath = ClassPath.EMPTY;
             classpath = classpath.plus(moduleRegistry.getExternalModule("ant").getClasspath());

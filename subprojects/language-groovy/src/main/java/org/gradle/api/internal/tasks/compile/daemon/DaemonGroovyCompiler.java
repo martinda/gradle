@@ -20,10 +20,6 @@ import com.google.common.collect.Iterables;
 import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.api.internal.tasks.compile.BaseForkOptionsConverter;
 import org.gradle.api.internal.tasks.compile.GroovyJavaJointCompileSpec;
-import org.gradle.api.logging.LogLevel;
-import org.gradle.api.logging.Logger;
-import org.gradle.api.tasks.WorkResult;
-import org.gradle.api.tasks.WorkResults;
 import org.gradle.api.tasks.compile.ForkOptions;
 import org.gradle.api.tasks.compile.GroovyForkOptions;
 import org.gradle.internal.classloader.FilteringClassLoader;
@@ -43,6 +39,7 @@ import org.gradle.workers.internal.WorkerFactory;
 import java.io.File;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 
 public class DaemonGroovyCompiler extends AbstractDaemonCompiler<GroovyJavaJointCompileSpec> {
     private final static Iterable<String> SHARED_PACKAGES = Arrays.asList("groovy", "org.codehaus.groovy", "groovyjarjarantlr", "groovyjarjarasm", "groovyjarjarcommonscli", "org.apache.tools.ant", "com.sun.tools.javac");
@@ -67,23 +64,12 @@ public class DaemonGroovyCompiler extends AbstractDaemonCompiler<GroovyJavaJoint
         // that's why we add it here. The following assumes that any Groovy compiler version supported by Gradle
         // is compatible with Gradle's current Ant version.
         Collection<File> antFiles = classPathRegistry.getClassPath("ANT").getAsFiles();
-        Iterable<File> classpath = Iterables.concat(spec.getGroovyClasspath(), antFiles);
-        VisitableURLClassLoader.Spec targetGroovyClasspath = new VisitableURLClassLoader.Spec("worker-loader", DefaultClassPath.of(classpath).getAsURLs());
+        Iterable<File> targetGroovyFiles = Iterables.concat(spec.getGroovyClasspath(), antFiles);
 
         // TODO We should infer a minimal classpath from delegate instead
         Collection<File> languageGroovyFiles = classPathRegistry.getClassPath("LANGUAGE-GROOVY").getAsFiles();
-        VisitableURLClassLoader.Spec compilerClasspath = new VisitableURLClassLoader.Spec("compiler-loader", DefaultClassPath.of(languageGroovyFiles).getAsURLs());
 
-        FilteringClassLoader.Spec gradleAndUserFilter = getMinimalGradleFilter();
-        for (String sharedPackage : SHARED_PACKAGES) {
-            gradleAndUserFilter.allowPackage(sharedPackage);
-        }
-
-        ClassLoaderStructure classLoaderStructure =
-                new ClassLoaderStructure(getMinimalGradleFilter())
-                        .withChild(targetGroovyClasspath)
-                        .withChild(gradleAndUserFilter)
-                        .withChild(compilerClasspath);
+        ClassLoaderStructure classLoaderStructure = getCompilerClassLoaderStructure(languageGroovyFiles, targetGroovyFiles, SHARED_PACKAGES, Collections.<String>emptyList());
 
         JavaForkOptions javaForkOptions = new BaseForkOptionsConverter(forkOptionsFactory).transform(mergeForkOptions(javaOptions, groovyOptions));
         javaForkOptions.setWorkingDir(daemonWorkingDir);
@@ -98,24 +84,4 @@ public class DaemonGroovyCompiler extends AbstractDaemonCompiler<GroovyJavaJoint
             .build();
     }
 
-    private static FilteringClassLoader.Spec getMinimalGradleFilter() {
-        // Allow just the basics instead of the entire Gradle API
-        FilteringClassLoader.Spec gradleFilterSpec = new FilteringClassLoader.Spec();
-        // Logging
-        gradleFilterSpec.allowPackage("org.slf4j");
-        gradleFilterSpec.allowClass(Logger.class);
-        gradleFilterSpec.allowClass(LogLevel.class);
-        // Native
-        gradleFilterSpec.allowPackage("org.gradle.internal.nativeintegration");
-        gradleFilterSpec.allowPackage("org.gradle.internal.nativeplatform");
-        gradleFilterSpec.allowPackage("net.rubygrapefruit.platform");
-        // Workers
-        gradleFilterSpec.allowPackage("org.gradle.workers");
-        gradleFilterSpec.allowPackage("javax.inject");
-        // WorkResult
-        gradleFilterSpec.allowClass(WorkResults.class);
-        gradleFilterSpec.allowClass(WorkResult.class);
-
-        return gradleFilterSpec;
-    }
 }

@@ -17,33 +17,15 @@
 package org.gradle.process.internal.worker.child;
 
 import org.gradle.api.Action;
-import org.gradle.api.internal.ClassPathRegistry;
-import org.gradle.api.internal.DefaultClassPathProvider;
-import org.gradle.api.internal.DefaultClassPathRegistry;
-import org.gradle.api.internal.DynamicModulesClassPathProvider;
-import org.gradle.api.internal.classpath.DefaultModuleRegistry;
-import org.gradle.api.internal.classpath.DefaultPluginModuleRegistry;
-import org.gradle.api.internal.classpath.ModuleRegistry;
-import org.gradle.api.internal.classpath.PluginModuleRegistry;
 import org.gradle.api.logging.LogLevel;
-import org.gradle.initialization.ClassLoaderRegistry;
-import org.gradle.initialization.DefaultClassLoaderRegistry;
-import org.gradle.initialization.DefaultLegacyTypesSupport;
-import org.gradle.initialization.FlatClassLoaderRegistry;
 import org.gradle.initialization.GradleUserHomeDirProvider;
-import org.gradle.initialization.LegacyTypesSupport;
 import org.gradle.internal.UncheckedException;
-import org.gradle.internal.classpath.ClassPath;
 import org.gradle.internal.concurrent.ExecutorFactory;
-import org.gradle.internal.event.DefaultListenerManager;
 import org.gradle.internal.event.ListenerManager;
-import org.gradle.internal.installation.CurrentGradleInstallation;
-import org.gradle.internal.installation.GradleRuntimeShadedJarDetector;
 import org.gradle.internal.io.ClassLoaderObjectInputStream;
 import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.logging.services.LoggingServiceRegistry;
 import org.gradle.internal.nativeintegration.services.NativeServices;
-import org.gradle.internal.reflect.DirectInstantiator;
 import org.gradle.internal.remote.MessagingClient;
 import org.gradle.internal.remote.ObjectConnection;
 import org.gradle.internal.remote.internal.inet.MultiChoiceAddress;
@@ -54,10 +36,7 @@ import org.gradle.internal.serialize.InputStreamBackedDecoder;
 import org.gradle.internal.service.DefaultServiceRegistry;
 import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.service.ServiceRegistryBuilder;
-import org.gradle.internal.service.scopes.GlobalScopeServices;
-import org.gradle.internal.time.Clock;
-import org.gradle.internal.time.Time;
-import org.gradle.process.internal.health.memory.DefaultJvmMemoryInfo;
+import org.gradle.internal.service.scopes.WorkerSharedGlobalScopeServices;
 import org.gradle.process.internal.health.memory.DefaultMemoryManager;
 import org.gradle.process.internal.health.memory.DisabledOsMemoryInfo;
 import org.gradle.process.internal.health.memory.JvmMemoryInfo;
@@ -120,7 +99,7 @@ public class SystemApplicationClassLoaderWorker implements Callable<Void> {
         final ServiceRegistry globalServices = ServiceRegistryBuilder.builder()
                 .parent(NativeServices.getInstance())
                 .parent(loggingServiceRegistry)
-                .provider(new GlobalScopeServices(true))
+                .provider(new WorkerSharedGlobalScopeServices())
                 .build();
         final ServiceRegistry workerServices = new WorkerServices(globalServices, gradleUserHomeDir);
         MessagingServices messagingServices = workerServices.get(MessagingServices.class);

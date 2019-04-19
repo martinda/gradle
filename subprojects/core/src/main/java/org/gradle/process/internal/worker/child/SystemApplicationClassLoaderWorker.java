@@ -42,6 +42,7 @@ import org.gradle.internal.installation.GradleRuntimeShadedJarDetector;
 import org.gradle.internal.io.ClassLoaderObjectInputStream;
 import org.gradle.internal.logging.LoggingManagerInternal;
 import org.gradle.internal.logging.services.LoggingServiceRegistry;
+import org.gradle.internal.nativeintegration.services.NativeServices;
 import org.gradle.internal.reflect.DirectInstantiator;
 import org.gradle.internal.remote.MessagingClient;
 import org.gradle.internal.remote.ObjectConnection;
@@ -52,6 +53,8 @@ import org.gradle.internal.serialize.Decoder;
 import org.gradle.internal.serialize.InputStreamBackedDecoder;
 import org.gradle.internal.service.DefaultServiceRegistry;
 import org.gradle.internal.service.ServiceRegistry;
+import org.gradle.internal.service.ServiceRegistryBuilder;
+import org.gradle.internal.service.scopes.GlobalScopeServices;
 import org.gradle.internal.time.Clock;
 import org.gradle.internal.time.Time;
 import org.gradle.process.internal.health.memory.DefaultJvmMemoryInfo;
@@ -100,7 +103,8 @@ public class SystemApplicationClassLoaderWorker implements Callable<Void> {
 
         // Read logging config and setup logging
         int logLevel = decoder.readSmallInt();
-        LoggingManagerInternal loggingManager = createLoggingManager();
+        LoggingServiceRegistry loggingServiceRegistry = LoggingServiceRegistry.newEmbeddableLogging();
+        LoggingManagerInternal loggingManager = createLoggingManager(loggingServiceRegistry);
         loggingManager.setLevelInternal(LogLevel.values()[logLevel]).start();
 
         // Read whether process info should be published
@@ -112,8 +116,14 @@ public class SystemApplicationClassLoaderWorker implements Callable<Void> {
 
         // Read server address and start connecting
         MultiChoiceAddress serverAddress = new MultiChoiceAddressSerializer().read(decoder);
-        MessagingServices messagingServices = new MessagingServices();
-        final WorkerServices workerServices = new WorkerServices(messagingServices, gradleUserHomeDir);
+        NativeServices.initialize(gradleUserHomeDir);
+        final ServiceRegistry globalServices = ServiceRegistryBuilder.builder()
+                .parent(NativeServices.getInstance())
+                .parent(loggingServiceRegistry)
+                .provider(new GlobalScopeServices(true))
+                .build();
+        final ServiceRegistry workerServices = new WorkerServices(globalServices, gradleUserHomeDir);
+        MessagingServices messagingServices = workerServices.get(MessagingServices.class);
 
         ObjectConnection connection = null;
         WorkerLogEventListener workerLogEventListener = null;
@@ -209,7 +219,7 @@ public class SystemApplicationClassLoaderWorker implements Callable<Void> {
         return workerLogEventListener;
     }
 
-    private void configureWorkerJvmMemoryInfoEvents(WorkerServices services, ObjectConnection connection) {
+    private void configureWorkerJvmMemoryInfoEvents(ServiceRegistry services, ObjectConnection connection) {
         connection.useParameterSerializers(WorkerJvmMemoryInfoSerializer.create());
         final WorkerJvmMemoryInfoProtocol workerJvmMemoryInfoProtocol = connection.addOutgoing(WorkerJvmMemoryInfoProtocol.class);
         services.get(MemoryManager.class).addListener(new JvmMemoryStatusListener() {
@@ -220,8 +230,8 @@ public class SystemApplicationClassLoaderWorker implements Callable<Void> {
         });
     }
 
-    LoggingManagerInternal createLoggingManager() {
-        LoggingManagerInternal loggingManagerInternal = LoggingServiceRegistry.newEmbeddableLogging().newInstance(LoggingManagerInternal.class);
+    LoggingManagerInternal createLoggingManager(LoggingServiceRegistry loggingServiceRegistry) {
+        LoggingManagerInternal loggingManagerInternal = loggingServiceRegistry.newInstance(LoggingManagerInternal.class);
         loggingManagerInternal.captureSystemSources();
         return loggingManagerInternal;
     }
@@ -241,20 +251,8 @@ public class SystemApplicationClassLoaderWorker implements Callable<Void> {
             });
         }
 
-        Clock createClock() {
-            return Time.clock();
-        }
-
-        ListenerManager createListenerManager() {
-            return new DefaultListenerManager();
-        }
-
         OsMemoryInfo createOsMemoryInfo() {
             return new DisabledOsMemoryInfo();
-        }
-
-        JvmMemoryInfo createJvmMemoryInfo() {
-            return new DefaultJvmMemoryInfo();
         }
 
         MemoryManager createMemoryManager(OsMemoryInfo osMemoryInfo, JvmMemoryInfo jvmMemoryInfo, ListenerManager listenerManager, ExecutorFactory executorFactory) {
@@ -265,37 +263,8 @@ public class SystemApplicationClassLoaderWorker implements Callable<Void> {
             return new DefaultWorkerDirectoryProvider(gradleUserHomeDirProvider);
         }
 
-        ClassLoaderRegistry createClassLoaderRegistry(ClassPathRegistry classPathRegistry, LegacyTypesSupport legacyTypesSupport) {
-            if (GradleRuntimeShadedJarDetector.isLoadedFrom(getClass())) {
-                return new FlatClassLoaderRegistry(getClass().getClassLoader());
-            }
-
-            // Use DirectInstantiator here to avoid setting up the instantiation infrastructure early
-            return new DefaultClassLoaderRegistry(classPathRegistry, legacyTypesSupport, DirectInstantiator.INSTANCE);
+        WorkerServices createWorkerServices() {
+            return this;
         }
-
-        LegacyTypesSupport createLegacyTypesSupport() {
-            return new DefaultLegacyTypesSupport();
-        }
-
-        ClassPathRegistry createClassPathRegistry(ModuleRegistry moduleRegistry, PluginModuleRegistry pluginModuleRegistry) {
-            return new DefaultClassPathRegistry(
-                    new DefaultClassPathProvider(moduleRegistry),
-                    new DynamicModulesClassPathProvider(moduleRegistry,
-                            pluginModuleRegistry));
-        }
-
-        DefaultModuleRegistry createModuleRegistry(CurrentGradleInstallation currentGradleInstallation) {
-            return new DefaultModuleRegistry(ClassPath.EMPTY, currentGradleInstallation.getInstallation());
-        }
-
-        CurrentGradleInstallation createCurrentGradleInstallation() {
-            return CurrentGradleInstallation.locate();
-        }
-
-        PluginModuleRegistry createPluginModuleRegistry(ModuleRegistry moduleRegistry) {
-            return new DefaultPluginModuleRegistry(moduleRegistry);
-        }
-
     }
 }

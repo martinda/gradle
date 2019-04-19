@@ -18,6 +18,7 @@ package org.gradle.workers.internal;
 
 import org.gradle.internal.operations.BuildOperationExecutor;
 import org.gradle.internal.operations.BuildOperationRef;
+import org.gradle.internal.service.DefaultServiceRegistry;
 import org.gradle.workers.IsolationMode;
 
 public class IsolatedClassloaderWorkerFactory implements WorkerFactory {
@@ -36,7 +37,7 @@ public class IsolatedClassloaderWorkerFactory implements WorkerFactory {
                     @Override
                     public DefaultWorkResult execute(ActionExecutionSpec spec) {
                         ClassLoader workerInfrastructureClassloader = spec.getClass().getClassLoader();
-                        return new IsolatedClassloaderWorker(forkOptions.getClassLoaderStructure(), workerInfrastructureClassloader).execute(spec);
+                        return new IsolatedClassloaderWorker(forkOptions.getClassLoaderStructure(), workerInfrastructureClassloader, new DefaultServiceRegistry()).execute(spec);
                     }
                 });
             }

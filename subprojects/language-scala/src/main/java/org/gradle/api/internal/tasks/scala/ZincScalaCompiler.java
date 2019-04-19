@@ -61,7 +61,7 @@ public class ZincScalaCompiler implements Compiler<ScalaJavaJointCompileSpec>, S
             final xsbti.Logger logger = new SbtLoggerAdapter();
 
             Timer timer = Time.startTimer();
-            com.typesafe.zinc.Compiler compiler = ZincScalaCompilerFactory.createParallelSafeCompiler(scalaClasspath, zincClasspath, logger, gradleUserHome);
+            com.typesafe.zinc.Compiler compiler = ZincScalaCompilerFactory.createParallelSafeCompiler(spec.getServiceRegistry(), scalaClasspath, zincClasspath, logger, gradleUserHome);
             LOGGER.info("Initialized Zinc Scala compiler: {}", timer.getElapsed());
 
             List<String> scalacOptions = new ZincScalaCompilerArgumentsGenerator().generate(spec);

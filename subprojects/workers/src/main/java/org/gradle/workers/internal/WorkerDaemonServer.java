@@ -18,16 +18,19 @@ package org.gradle.workers.internal;
 
 import org.gradle.initialization.ClassLoaderRegistry;
 import org.gradle.internal.Cast;
+import org.gradle.internal.service.ServiceRegistry;
 
 import javax.inject.Inject;
 
 public class WorkerDaemonServer implements WorkerProtocol {
     private final ClassLoaderRegistry classLoaderRegistry;
+    private final ServiceRegistry serviceRegistry;
     private Worker isolatedClassloaderWorker;
 
     @Inject
-    public WorkerDaemonServer(ClassLoaderRegistry classLoaderRegistry) {
-        this.classLoaderRegistry = classLoaderRegistry;
+    public WorkerDaemonServer(ServiceRegistry serviceRegistry) {
+        this.serviceRegistry = serviceRegistry;
+        this.classLoaderRegistry = serviceRegistry.get(ClassLoaderRegistry.class);
     }
 
     @Override
@@ -44,7 +47,7 @@ public class WorkerDaemonServer implements WorkerProtocol {
     private Worker getIsolatedClassloaderWorker(ClassLoaderStructure classLoaderStructure) {
         // We can reuse the classloader worker as the ClassLoaderStructure should not change in between invocations
         if (isolatedClassloaderWorker == null) {
-            isolatedClassloaderWorker = new IsolatedClassloaderWorker(classLoaderStructure, classLoaderRegistry.getPluginsClassLoader(), true);
+            isolatedClassloaderWorker = new IsolatedClassloaderWorker(classLoaderStructure, classLoaderRegistry.getPluginsClassLoader(), serviceRegistry, true);
         }
         return isolatedClassloaderWorker;
     }

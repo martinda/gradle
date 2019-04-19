@@ -32,11 +32,18 @@ public class DefaultClassPathProvider implements ClassPathProvider {
         if (name.equals("GRADLE_INSTALLATION_BEACON")) {
             return moduleRegistry.getModule("gradle-installation-beacon").getImplementationClasspath();
         }
-        if (name.equals("LANGUAGE-GROOVY")) {
+        if (name.equals("GROOVY-COMPILER")) {
             return moduleRegistry.getModule("gradle-language-groovy").getAllRequiredModulesClasspath();
         }
-        if (name.equals("LANGUAGE-SCALA")) {
-            return moduleRegistry.getModule("gradle-scala").getAllRequiredModulesClasspath();
+        if (name.equals("SCALA-COMPILER")) {
+            ClassPath classpath = ClassPath.EMPTY;
+            classpath = classpath.plus(moduleRegistry.getModule("gradle-language-scala").getImplementationClasspath());
+            classpath = classpath.plus(moduleRegistry.getModule("gradle-scala").getImplementationClasspath());
+            classpath = classpath.plus(moduleRegistry.getModule("gradle-language-jvm").getImplementationClasspath());
+            classpath = classpath.plus(moduleRegistry.getModule("gradle-language-java").getImplementationClasspath());
+            classpath = classpath.plus(moduleRegistry.getModule("gradle-platform-base").getImplementationClasspath());
+            classpath = classpath.plus(moduleRegistry.getExternalModule("guava").getClasspath());
+            return classpath;
         }
         if (name.equals("ANT")) {
             ClassPath classpath = ClassPath.EMPTY;

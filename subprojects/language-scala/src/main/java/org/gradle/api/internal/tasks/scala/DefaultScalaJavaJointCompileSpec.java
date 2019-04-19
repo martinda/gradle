@@ -17,17 +17,20 @@
 package org.gradle.api.internal.tasks.scala;
 
 import org.gradle.api.internal.tasks.compile.DefaultJavaCompileSpec;
+import org.gradle.internal.service.ServiceRegistry;
+import org.gradle.language.base.internal.compile.RequiresServices;
 import org.gradle.language.scala.tasks.BaseScalaCompileOptions;
 
 import java.io.File;
 import java.util.Map;
 
-public class DefaultScalaJavaJointCompileSpec extends DefaultJavaCompileSpec implements ScalaJavaJointCompileSpec {
+public class DefaultScalaJavaJointCompileSpec extends DefaultJavaCompileSpec implements ScalaJavaJointCompileSpec, RequiresServices {
     private BaseScalaCompileOptions options;
     private Iterable<File> scalaClasspath;
     private Iterable<File> zincClasspath;
     private Map<File, File> analysisMap;
     private File analysisFile;
+    private ServiceRegistry serviceRegistry;
 
     @Override
     public BaseScalaCompileOptions getScalaCompileOptions() {
@@ -72,5 +75,15 @@ public class DefaultScalaJavaJointCompileSpec extends DefaultJavaCompileSpec imp
     @Override
     public void setAnalysisMap(Map<File, File> analysisMap) {
         this.analysisMap = analysisMap;
+    }
+
+    @Override
+    public ServiceRegistry getServiceRegistry() {
+        return serviceRegistry;
+    }
+
+    @Override
+    public void setServiceRegistry(ServiceRegistry serviceRegistry) {
+        this.serviceRegistry = serviceRegistry;
     }
 }

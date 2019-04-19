@@ -142,7 +142,7 @@ compileScala.scalaCompileOptions.failOnError = false
                 options.forkOptions.executable = "${differentJavacExecutablePath}"
                 options.forkOptions.memoryInitialSize = "128m"
                 options.forkOptions.memoryMaximumSize = "256m"
-                options.forkOptions.jvmArgs = ["-Dfoo=bar", "-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=*:5005"]
+                options.forkOptions.jvmArgs = ["-Dfoo=bar"]
                 
                 doLast {
                     assert services.get(WorkerDaemonClientsManager).idleClients.find { 

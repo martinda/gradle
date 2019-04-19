@@ -33,6 +33,7 @@ import org.gradle.internal.io.ClassLoaderObjectInputStream;
 import org.gradle.internal.reflect.DirectInstantiator;
 import org.gradle.internal.serialize.ExceptionReplacingObjectInputStream;
 import org.gradle.internal.serialize.ExceptionReplacingObjectOutputStream;
+import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.util.GUtil;
 
 import java.io.ByteArrayInputStream;
@@ -42,6 +43,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.lang.reflect.Method;
 import java.util.Collections;
 import java.util.concurrent.Callable;
 
@@ -49,16 +51,18 @@ public class IsolatedClassloaderWorker implements Worker {
     private final GroovySystemLoaderFactory groovySystemLoaderFactory = new GroovySystemLoaderFactory();
     private final ClassLoaderStructure classLoaderStructure;
     private final ClassLoader workerInfrastructureClassloader;
+    private final ServiceRegistry serviceRegistry;
     private ClassLoader workerClassLoader;
     private boolean reuseClassloader;
 
-    public IsolatedClassloaderWorker(ClassLoaderStructure classLoaderStructure, ClassLoader workerInfrastructureClassloader) {
+    public IsolatedClassloaderWorker(ClassLoaderStructure classLoaderStructure, ClassLoader workerInfrastructureClassloader, ServiceRegistry serviceRegistry) {
         this.classLoaderStructure = classLoaderStructure;
         this.workerInfrastructureClassloader = workerInfrastructureClassloader;
+        this.serviceRegistry = serviceRegistry;
     }
 
-    public IsolatedClassloaderWorker(ClassLoaderStructure classLoaderStructure, ClassLoader workerInfrastructureClassloader, boolean reuseClassloader) {
-        this(classLoaderStructure, workerInfrastructureClassloader);
+    public IsolatedClassloaderWorker(ClassLoaderStructure classLoaderStructure, ClassLoader workerInfrastructureClassloader, ServiceRegistry serviceRegistry, boolean reuseClassloader) {
+        this(classLoaderStructure, workerInfrastructureClassloader, serviceRegistry);
         this.reuseClassloader = reuseClassloader;
     }
 
@@ -74,6 +78,7 @@ public class IsolatedClassloaderWorker implements Worker {
                 effectiveSpec = ((WrappedActionExecutionSpec)spec).unwrap(workerClassLoader);
             }
             Callable<?> worker = transferWorkerIntoWorkerClassloader(effectiveSpec, workerClassLoader);
+            injectServiceRegistry(worker);
             Object result = worker.call();
             return transferResultFromWorkerClassLoader(result);
         } catch (Exception e) {
@@ -85,6 +90,15 @@ public class IsolatedClassloaderWorker implements Worker {
                 this.workerClassLoader = null;
             }
             Thread.currentThread().setContextClassLoader(previousContextLoader);
+        }
+    }
+
+    private void injectServiceRegistry(Object worker) {
+        try {
+            Method setServicesMethod = worker.getClass().getDeclaredMethod("setServiceRegistry", ServiceRegistry.class);
+            setServicesMethod.invoke(worker, serviceRegistry);
+        } catch (Exception e) {
+            throw UncheckedException.throwAsUncheckedException(e);
         }
     }
 
@@ -171,16 +185,21 @@ public class IsolatedClassloaderWorker implements Worker {
      */
     private static class WorkerCallable implements Callable<Object>, Serializable {
         private final ActionExecutionSpec spec;
+        private ServiceRegistry serviceRegistry;
 
         private WorkerCallable(ActionExecutionSpec spec) {
             this.spec = spec;
+        }
+
+        void setServiceRegistry(ServiceRegistry serviceRegistry) {
+            this.serviceRegistry = serviceRegistry;
         }
 
         @Override
         public Object call() throws Exception {
             // TODO - reuse these services, either by making the global instances visible or by reusing the worker ClassLoaders and retaining a reference to them
             DefaultInstantiatorFactory instantiatorFactory = new DefaultInstantiatorFactory(new DefaultCrossBuildInMemoryCacheFactory(new DefaultListenerManager()), Collections.<InjectAnnotationHandler>emptyList());
-            WorkerProtocol worker = new DefaultWorkerServer(instantiatorFactory.inject());
+            WorkerProtocol worker = new DefaultWorkerServer(instantiatorFactory.inject(serviceRegistry));
 
             return worker.execute(spec);
         }

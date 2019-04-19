@@ -32,14 +32,22 @@ package org.gradle.api.internal.tasks.scala;
  * limitations under the License.
  */
 
+import org.gradle.api.Action;
+import org.gradle.api.InvalidUserDataException;
+import org.gradle.api.JavaVersion;
 import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.api.internal.tasks.compile.BaseForkOptionsConverter;
 import org.gradle.api.internal.tasks.compile.daemon.AbstractDaemonCompiler;
 import org.gradle.api.tasks.compile.ForkOptions;
 import org.gradle.api.tasks.scala.ScalaForkOptions;
+import org.gradle.internal.Factory;
+import org.gradle.internal.SystemProperties;
+import org.gradle.internal.classloader.FilteringClassLoader;
+import org.gradle.internal.jvm.Jvm;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.process.JavaForkOptions;
 import org.gradle.process.internal.JavaForkOptionsFactory;
+import org.gradle.util.GFileUtils;
 import org.gradle.workers.internal.ClassLoaderStructure;
 import org.gradle.workers.internal.DaemonForkOptions;
 import org.gradle.workers.internal.DaemonForkOptionsBuilder;
@@ -70,10 +78,29 @@ public class DaemonScalaCompiler<T extends ScalaJavaJointCompileSpec> extends Ab
     protected DaemonForkOptions toDaemonForkOptions(T spec) {
         ForkOptions javaOptions = spec.getCompileOptions().getForkOptions();
 
-        // TODO We should infer a minimal classpath from delegate instead
-        Collection<File> languageScalaFiles = classPathRegistry.getClassPath("LANGUAGE-SCALA").getAsFiles();
+        Collection<File> languageScalaFiles = classPathRegistry.getClassPath("SCALA-COMPILER").getAsFiles();
 
-        ClassLoaderStructure classLoaderStructure = getCompilerClassLoaderStructure(languageScalaFiles, zincClasspath, VERSION_SPECIFIC_PACKAGES);
+        // Additional internal stuff that the Zinc compiler needs
+        Action<FilteringClassLoader.Spec> filterConfiguration = new Action<FilteringClassLoader.Spec>() {
+            @Override
+            public void execute(FilteringClassLoader.Spec spec) {
+                // File Collections
+                spec.allowPackage("org.gradle.api.file");
+                // Time
+                spec.allowPackage("org.gradle.internal.time");
+                // Cache
+                spec.allowPackage("org.gradle.cache");
+                // Various classes
+                spec.allowClass(Factory.class);
+                spec.allowClass(SystemProperties.class);
+                spec.allowClass(Jvm.class);
+                spec.allowClass(GFileUtils.class);
+                spec.allowClass(InvalidUserDataException.class);
+                spec.allowClass(JavaVersion.class);
+            }
+        };
+
+        ClassLoaderStructure classLoaderStructure = getCompilerClassLoaderStructure(languageScalaFiles, zincClasspath, VERSION_SPECIFIC_PACKAGES, filterConfiguration);
 
         ScalaForkOptions scalaOptions = spec.getScalaCompileOptions().getForkOptions();
         JavaForkOptions javaForkOptions = new BaseForkOptionsConverter(forkOptionsFactory).transform(mergeForkOptions(javaOptions, scalaOptions));

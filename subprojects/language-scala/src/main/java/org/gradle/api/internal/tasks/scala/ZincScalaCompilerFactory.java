@@ -30,10 +30,9 @@ import org.gradle.cache.internal.CacheRepositoryServices;
 import org.gradle.internal.Factory;
 import org.gradle.internal.SystemProperties;
 import org.gradle.internal.jvm.Jvm;
-import org.gradle.internal.logging.services.LoggingServiceRegistry;
 import org.gradle.internal.nativeintegration.services.NativeServices;
 import org.gradle.internal.service.DefaultServiceRegistry;
-import org.gradle.internal.service.scopes.GlobalScopeServices;
+import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.internal.time.Time;
 import org.gradle.internal.time.Timer;
 import org.gradle.util.GFileUtils;
@@ -49,9 +48,9 @@ import static org.gradle.cache.internal.filelock.LockOptionsBuilder.mode;
 public class ZincScalaCompilerFactory {
     private static final Logger LOGGER = Logging.getLogger(ZincScalaCompilerFactory.class);
 
-    static Compiler createParallelSafeCompiler(final Iterable<File> scalaClasspath, final Iterable<File> zincClasspath, final xsbti.Logger logger, File gradleUserHome) {
+    static Compiler createParallelSafeCompiler(ServiceRegistry services, final Iterable<File> scalaClasspath, final Iterable<File> zincClasspath, final xsbti.Logger logger, File gradleUserHome) {
         File zincCacheHomeDir = new File(System.getProperty(ZincScalaCompilerUtil.ZINC_CACHE_HOME_DIR_SYSTEM_PROPERTY, gradleUserHome.getAbsolutePath()));
-        CacheRepository cacheRepository = ZincCompilerServices.getInstance(zincCacheHomeDir).get(CacheRepository.class);
+        CacheRepository cacheRepository = ZincCompilerServices.getInstance(services, zincCacheHomeDir).get(CacheRepository.class);
 
         String zincVersion = Setup.zincVersion().published();
         String zincCacheKey = String.format("zinc-%s", zincVersion);
@@ -166,18 +165,16 @@ public class ZincScalaCompilerFactory {
     private static class ZincCompilerServices extends DefaultServiceRegistry {
         private static ZincCompilerServices instance;
 
-        private ZincCompilerServices(File gradleUserHome) {
-            super(NativeServices.getInstance());
+        private ZincCompilerServices(ServiceRegistry parent, File gradleUserHome) {
+            super(parent);
 
-            addProvider(LoggingServiceRegistry.NO_OP);
-            addProvider(new GlobalScopeServices(true));
             addProvider(new CacheRepositoryServices(gradleUserHome, null));
         }
 
-        public static ZincCompilerServices getInstance(File gradleUserHome) {
+        public static ZincCompilerServices getInstance(ServiceRegistry serviceRegistry, File gradleUserHome) {
             if (instance == null) {
                 NativeServices.initialize(gradleUserHome);
-                instance = new ZincCompilerServices(gradleUserHome);
+                instance = new ZincCompilerServices(serviceRegistry, gradleUserHome);
             }
             return instance;
         }

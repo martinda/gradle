@@ -22,9 +22,6 @@ import org.gradle.api.internal.tasks.compile.BaseForkOptionsConverter;
 import org.gradle.api.internal.tasks.compile.GroovyJavaJointCompileSpec;
 import org.gradle.api.tasks.compile.ForkOptions;
 import org.gradle.api.tasks.compile.GroovyForkOptions;
-import org.gradle.internal.classloader.FilteringClassLoader;
-import org.gradle.internal.classloader.VisitableURLClassLoader;
-import org.gradle.internal.classpath.DefaultClassPath;
 import org.gradle.internal.jvm.GroovyJpmsWorkarounds;
 import org.gradle.internal.jvm.inspection.JvmVersionDetector;
 import org.gradle.language.base.internal.compile.Compiler;
@@ -39,7 +36,6 @@ import org.gradle.workers.internal.WorkerFactory;
 import java.io.File;
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 
 public class DaemonGroovyCompiler extends AbstractDaemonCompiler<GroovyJavaJointCompileSpec> {
     private final static Iterable<String> SHARED_PACKAGES = Arrays.asList("groovy", "org.codehaus.groovy", "groovyjarjarantlr", "groovyjarjarasm", "groovyjarjarcommonscli", "org.apache.tools.ant", "com.sun.tools.javac");
@@ -67,9 +63,9 @@ public class DaemonGroovyCompiler extends AbstractDaemonCompiler<GroovyJavaJoint
         Iterable<File> targetGroovyFiles = Iterables.concat(spec.getGroovyClasspath(), antFiles);
 
         // TODO We should infer a minimal classpath from delegate instead
-        Collection<File> languageGroovyFiles = classPathRegistry.getClassPath("LANGUAGE-GROOVY").getAsFiles();
+        Collection<File> languageGroovyFiles = classPathRegistry.getClassPath("GROOVY-COMPILER").getAsFiles();
 
-        ClassLoaderStructure classLoaderStructure = getCompilerClassLoaderStructure(languageGroovyFiles, targetGroovyFiles, SHARED_PACKAGES, Collections.<String>emptyList());
+        ClassLoaderStructure classLoaderStructure = getCompilerClassLoaderStructure(languageGroovyFiles, targetGroovyFiles, SHARED_PACKAGES);
 
         JavaForkOptions javaForkOptions = new BaseForkOptionsConverter(forkOptionsFactory).transform(mergeForkOptions(javaOptions, groovyOptions));
         javaForkOptions.setWorkingDir(daemonWorkingDir);

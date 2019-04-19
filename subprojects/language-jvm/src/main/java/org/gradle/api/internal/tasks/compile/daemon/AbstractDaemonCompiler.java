@@ -16,17 +16,28 @@
 package org.gradle.api.internal.tasks.compile.daemon;
 
 import com.google.common.collect.Lists;
+import org.gradle.api.Action;
+import org.gradle.api.InvalidUserDataException;
+import org.gradle.api.JavaVersion;
 import org.gradle.api.logging.LogLevel;
 import org.gradle.api.logging.Logger;
+import org.gradle.api.logging.Logging;
 import org.gradle.api.tasks.WorkResult;
 import org.gradle.api.tasks.WorkResults;
 import org.gradle.api.tasks.compile.BaseForkOptions;
+import org.gradle.internal.Actions;
+import org.gradle.internal.Factory;
+import org.gradle.internal.SystemProperties;
 import org.gradle.internal.UncheckedException;
 import org.gradle.internal.classloader.FilteringClassLoader;
 import org.gradle.internal.classloader.VisitableURLClassLoader;
 import org.gradle.internal.classpath.DefaultClassPath;
+import org.gradle.internal.jvm.Jvm;
+import org.gradle.internal.service.ServiceRegistry;
 import org.gradle.language.base.internal.compile.CompileSpec;
 import org.gradle.language.base.internal.compile.Compiler;
+import org.gradle.language.base.internal.compile.RequiresServices;
+import org.gradle.util.GFileUtils;
 import org.gradle.workers.internal.ClassLoaderStructure;
 import org.gradle.workers.internal.DaemonForkOptions;
 import org.gradle.workers.internal.DefaultWorkResult;
@@ -79,13 +90,14 @@ public abstract class AbstractDaemonCompiler<T extends CompileSpec> implements C
         return merged;
     }
 
-    protected static FilteringClassLoader.Spec getMinimalGradleFilter() {
+    protected static FilteringClassLoader.Spec getMinimalGradleFilter(Action<FilteringClassLoader.Spec> additionalConfiguration) {
         // Allow just the basics instead of the entire Gradle API
         FilteringClassLoader.Spec gradleFilterSpec = new FilteringClassLoader.Spec();
         // Logging
         gradleFilterSpec.allowPackage("org.slf4j");
         gradleFilterSpec.allowClass(Logger.class);
         gradleFilterSpec.allowClass(LogLevel.class);
+        gradleFilterSpec.allowClass(Logging.class);
         // Native
         gradleFilterSpec.allowPackage("org.gradle.internal.nativeintegration");
         gradleFilterSpec.allowPackage("org.gradle.internal.nativeplatform");
@@ -96,20 +108,29 @@ public abstract class AbstractDaemonCompiler<T extends CompileSpec> implements C
         // WorkResult
         gradleFilterSpec.allowClass(WorkResults.class);
         gradleFilterSpec.allowClass(WorkResult.class);
+        // ServiceRegistry
+        gradleFilterSpec.allowPackage("org.gradle.internal.service");
+
+        // Any additional configuration provided by the compiler
+        additionalConfiguration.execute(gradleFilterSpec);
 
         return gradleFilterSpec;
     }
 
     protected static ClassLoaderStructure getCompilerClassLoaderStructure(Iterable<File> compilerClasspathFiles, Iterable<File> targetVersionClasspathFiles, Iterable<String> versionSpecificPackages) {
+        return getCompilerClassLoaderStructure(compilerClasspathFiles, targetVersionClasspathFiles, versionSpecificPackages, Actions.<FilteringClassLoader.Spec>doNothing());
+    }
+
+    protected static ClassLoaderStructure getCompilerClassLoaderStructure(Iterable<File> compilerClasspathFiles, Iterable<File> targetVersionClasspathFiles, Iterable<String> versionSpecificPackages, Action<FilteringClassLoader.Spec> filterConfiguration) {
         VisitableURLClassLoader.Spec targetVersionClasspath = new VisitableURLClassLoader.Spec("worker-loader", DefaultClassPath.of(targetVersionClasspathFiles).getAsURLs());
         VisitableURLClassLoader.Spec compilerClasspath = new VisitableURLClassLoader.Spec("compiler-loader", DefaultClassPath.of(compilerClasspathFiles).getAsURLs());
 
-        FilteringClassLoader.Spec gradleAndUserFilter = getMinimalGradleFilter();
+        FilteringClassLoader.Spec gradleAndUserFilter = getMinimalGradleFilter(filterConfiguration);
         for (String sharedPackage : versionSpecificPackages) {
             gradleAndUserFilter.allowPackage(sharedPackage);
         }
 
-        return new ClassLoaderStructure(getMinimalGradleFilter())
+        return new ClassLoaderStructure(getMinimalGradleFilter(filterConfiguration))
                         .withChild(targetVersionClasspath)
                         .withChild(gradleAndUserFilter)
                         .withChild(compilerClasspath);
@@ -118,15 +139,20 @@ public abstract class AbstractDaemonCompiler<T extends CompileSpec> implements C
     private static class CompilerCallable<T extends CompileSpec> implements Callable<WorkResult> {
         private final Compiler<T> compiler;
         private final T compileSpec;
+        private final ServiceRegistry serviceRegistry;
 
         @Inject
-        public CompilerCallable(Compiler<T> compiler, T compileSpec) {
+        public CompilerCallable(Compiler<T> compiler, T compileSpec, ServiceRegistry serviceRegistry) {
             this.compiler = compiler;
             this.compileSpec = compileSpec;
+            this.serviceRegistry = serviceRegistry;
         }
 
         @Override
         public WorkResult call() throws Exception {
+            if (compileSpec instanceof RequiresServices) {
+                ((RequiresServices) compileSpec).setServiceRegistry(serviceRegistry);
+            }
             return compiler.execute(compileSpec);
         }
     }

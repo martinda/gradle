@@ -37,7 +37,7 @@ public class IsolatedClassloaderWorkerFactory implements WorkerFactory {
                     @Override
                     public DefaultWorkResult execute(ActionExecutionSpec spec) {
                         ClassLoader workerInfrastructureClassloader = spec.getClass().getClassLoader();
-                        return new IsolatedClassloaderWorker(forkOptions.getClassLoaderStructure(), workerInfrastructureClassloader, new DefaultServiceRegistry()).execute(spec);
+                        return new IsolatedClassloaderWorker(forkOptions.getClassLoaderStructure(), workerInfrastructureClassloader, new InProcessWorkerServices()).execute(spec);
                     }
                 });
             }
@@ -49,5 +49,9 @@ public class IsolatedClassloaderWorkerFactory implements WorkerFactory {
         return IsolationMode.CLASSLOADER;
     }
 
-
+    private static class InProcessWorkerServices extends DefaultServiceRegistry {
+        InProcessWorkerServices createWorkerServices() {
+            return this;
+        }
+    }
 }

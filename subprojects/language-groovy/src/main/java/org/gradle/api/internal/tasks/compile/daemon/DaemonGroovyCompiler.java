@@ -17,16 +17,28 @@
 package org.gradle.api.internal.tasks.compile.daemon;
 
 import com.google.common.collect.Iterables;
+import org.gradle.api.Action;
+import org.gradle.api.GradleException;
+import org.gradle.api.InvalidUserDataException;
+import org.gradle.api.JavaVersion;
+import org.gradle.api.Transformer;
 import org.gradle.api.internal.ClassPathRegistry;
 import org.gradle.api.internal.tasks.compile.BaseForkOptionsConverter;
 import org.gradle.api.internal.tasks.compile.GroovyJavaJointCompileSpec;
 import org.gradle.api.tasks.compile.ForkOptions;
 import org.gradle.api.tasks.compile.GroovyForkOptions;
+import org.gradle.internal.Factory;
+import org.gradle.internal.FileUtils;
+import org.gradle.internal.SystemProperties;
+import org.gradle.internal.classloader.FilteringClassLoader;
 import org.gradle.internal.jvm.GroovyJpmsWorkarounds;
+import org.gradle.internal.jvm.Jvm;
 import org.gradle.internal.jvm.inspection.JvmVersionDetector;
 import org.gradle.language.base.internal.compile.Compiler;
 import org.gradle.process.JavaForkOptions;
 import org.gradle.process.internal.JavaForkOptionsFactory;
+import org.gradle.util.GUtil;
+import org.gradle.util.VersionNumber;
 import org.gradle.workers.internal.ClassLoaderStructure;
 import org.gradle.workers.internal.DaemonForkOptions;
 import org.gradle.workers.internal.DaemonForkOptionsBuilder;
@@ -65,7 +77,36 @@ public class DaemonGroovyCompiler extends AbstractDaemonCompiler<GroovyJavaJoint
         // TODO We should infer a minimal classpath from delegate instead
         Collection<File> languageGroovyFiles = classPathRegistry.getClassPath("GROOVY-COMPILER").getAsFiles();
 
-        ClassLoaderStructure classLoaderStructure = getCompilerClassLoaderStructure(languageGroovyFiles, targetGroovyFiles, SHARED_PACKAGES);
+        // Additional stuff the Groovy compiler needs
+        Action<FilteringClassLoader.Spec> filterConfiguration = new Action<FilteringClassLoader.Spec>() {
+            @Override
+            public void execute(FilteringClassLoader.Spec spec) {
+                // File Collections
+                spec.allowPackage("org.gradle.api.file");
+                // Process API
+                spec.allowPackage("org.gradle.process");
+                spec.allowPackage("org.gradle.internal.process");
+                // CompositeStoppable, et al
+                spec.allowPackage("org.gradle.internal.concurrent");
+                // Classloaders
+                spec.allowPackage("org.gradle.internal.classloader");
+                spec.allowPackage("org.gradle.api.internal.classloading");
+                spec.allowPackage("org.gradle.internal.classpath");
+                // Jvm
+                spec.allowPackage("org.gradle.internal.jvm");
+                // Various classes
+                spec.allowClass(Factory.class);
+                spec.allowClass(GradleException.class);
+                spec.allowClass(VersionNumber.class);
+                spec.allowClass(InvalidUserDataException.class);
+                spec.allowClass(JavaVersion.class);
+                spec.allowClass(GUtil.class);
+                spec.allowClass(SystemProperties.class);
+                spec.allowClass(FileUtils.class);
+                spec.allowClass(Transformer.class);
+            }
+        };
+        ClassLoaderStructure classLoaderStructure = getCompilerClassLoaderStructure(languageGroovyFiles, targetGroovyFiles, SHARED_PACKAGES, filterConfiguration);
 
         JavaForkOptions javaForkOptions = new BaseForkOptionsConverter(forkOptionsFactory).transform(mergeForkOptions(javaOptions, groovyOptions));
         javaForkOptions.setWorkingDir(daemonWorkingDir);
